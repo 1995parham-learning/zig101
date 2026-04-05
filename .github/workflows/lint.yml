@@ -1,0 +1,110 @@
+name: Zig Lint
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  discover:
+    name: Discover Projects
+    runs-on: ubuntu-latest
+    outputs:
+      standalone: ${{ steps.find.outputs.standalone }}
+      build: ${{ steps.find.outputs.build }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Find Zig projects
+        id: find
+        run: |
+          # Standalone: folders with a top-level main.zig (no build.zig)
+          standalone=$(find . -maxdepth 2 -name main.zig -not -path '*/src/*' \
+            -exec sh -c 'dir=$(dirname "$1"); [ ! -f "$dir/build.zig" ] && echo "$dir"' _ {} \; \
+            | sed 's|^\./||' | sort | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "standalone=$standalone" >> "$GITHUB_OUTPUT"
+
+          # Build system: folders with a build.zig
+          build=$(find . -maxdepth 2 -name build.zig \
+            | xargs -I{} dirname {} \
+            | sed 's|^\./||' | sort | jq -R -s -c 'split("\n") | map(select(. != ""))')
+          echo "build=$build" >> "$GITHUB_OUTPUT"
+
+  fmt:
+    name: "Format: ${{ matrix.project }}"
+    needs: discover
+    if: needs.discover.outputs.standalone != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.discover.outputs.standalone) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: latest
+
+      - name: Check formatting
+        run: zig fmt --check ${{ matrix.project }}/main.zig
+
+  fmt-build:
+    name: "Format: ${{ matrix.project }}"
+    needs: discover
+    if: needs.discover.outputs.build != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.discover.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: latest
+
+      - name: Check formatting
+        working-directory: ${{ matrix.project }}
+        run: find . -name '*.zig' | xargs zig fmt --check
+
+  ast-check:
+    name: "AST: ${{ matrix.project }}"
+    needs: discover
+    if: needs.discover.outputs.standalone != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.discover.outputs.standalone) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: latest
+
+      - name: AST check
+        run: zig ast-check ${{ matrix.project }}/main.zig
+
+  build:
+    name: "Build: ${{ matrix.project }}"
+    needs: discover
+    if: needs.discover.outputs.build != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        project: ${{ fromJson(needs.discover.outputs.build) }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: mlugg/setup-zig@v2
+        with:
+          version: latest
+
+      - name: Build
+        working-directory: ${{ matrix.project }}
+        run: zig build
