@@ -21,6 +21,11 @@ pub fn main() !void {
     // without waiting for the kernel's TIME_WAIT state to expire on the port.
     try posix.setsockopt(server, posix.SOL.SOCKET, posix.SO.REUSEADDR, &std.mem.toBytes(@as(c_int, 1)));
 
+    // SO_REUSEPORT allows multiple processes to bind to the same port.
+    // The kernel distributes incoming connections across all bound sockets,
+    // enabling multi-process load balancing without shared state.
+    try posix.setsockopt(server, posix.SOL.SOCKET, posix.SO.REUSEPORT, &std.mem.toBytes(@as(c_int, 1)));
+
     // bind() associates our socket with the address/port so the OS knows
     // to deliver incoming packets on port 1378 to this socket.
     try posix.bind(server, &address.any, address.getOsSockLen());
